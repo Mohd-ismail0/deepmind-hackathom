@@ -1,19 +1,23 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { createError } from '../middleware/errorHandler.js';
+import type { AuthenticatedRequest } from '../middleware/firebaseAdminAuth.js';
 
 const router = Router();
-const ADMIN_SECRET = process.env.ADMIN_SECRET || '';
 
-router.post('/verify', (req: Request, res: Response, next: NextFunction) => {
+router.get('/me', (req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!ADMIN_SECRET) {
-      throw createError('Admin API is not configured (ADMIN_SECRET missing).', 'CONFIG_ERROR', 503);
+    const authReq = req as AuthenticatedRequest;
+    const user = authReq.user;
+    if (!user) {
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
+      return;
     }
-    const { secret } = req.body || {};
-    if (secret !== ADMIN_SECRET) {
-      throw createError('Invalid admin secret.', 'UNAUTHORIZED', 401);
-    }
-    res.json({ success: true, token: ADMIN_SECRET });
+    res.json({
+      success: true,
+      data: {
+        uid: user.uid,
+        email: user.email ?? undefined,
+      },
+    });
   } catch (err) {
     next(err);
   }

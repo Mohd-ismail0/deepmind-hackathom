@@ -7,7 +7,8 @@ const router = Router();
 
 router.get('/status/:sessionId', (req: Request, res: Response, next: NextFunction) => {
   try {
-    const state = automationStore.getAutomationState(req.params.sessionId);
+    const sessionId = Array.isArray(req.params.sessionId) ? req.params.sessionId[0] : req.params.sessionId;
+    const state = automationStore.getAutomationState(sessionId);
     if (!state) {
       res.json({
         success: true,

@@ -92,12 +92,13 @@ export async function runAutomation(
       const step = steps[i];
       automationStore.setAutomationStep(sessionId, i);
       try {
-        const screenshot = await page.screenshot({ encoding: 'base64', type: 'png' }).catch(() => null);
+        const screenshotBuffer = await page.screenshot({ type: 'png' }).catch(() => null);
+        const screenshot = screenshotBuffer ? screenshotBuffer.toString('base64') : undefined;
         if (screenshot) automationStore.setAutomationStep(sessionId, i, screenshot);
 
         const userInput = await executeStep(page, step, sessionId, userData);
         if (userInput && step.responseKey) {
-          setCollectedData(sessionId, { [step.responseKey]: userInput });
+          await setCollectedData(sessionId, { [step.responseKey]: userInput });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

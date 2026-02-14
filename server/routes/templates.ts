@@ -5,18 +5,19 @@ import type { AutomationStep } from '../types.js';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const templates = templateStore.listTemplates();
+    const templates = await templateStore.listTemplates();
     res.json({ success: true, data: templates });
   } catch (err) {
     next(err);
   }
 });
 
-router.get('/:id', (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const template = templateStore.getTemplateById(req.params.id);
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const template = await templateStore.getTemplateById(id);
     if (!template) {
       throw createError('Template not found.', 'TEMPLATE_NOT_FOUND', 404);
     }
@@ -26,7 +27,7 @@ router.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.post('/', (req: Request, res: Response, next: NextFunction) => {
+router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, documentType, url, steps } = req.body;
     if (!name || !documentType || !url || !Array.isArray(steps)) {
@@ -37,7 +38,7 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
         { name: !!name, documentType: !!documentType, url: !!url, steps: Array.isArray(steps) }
       );
     }
-    const template = templateStore.createTemplate({
+    const template = await templateStore.createTemplate({
       name: String(name).trim(),
       documentType: String(documentType).trim(),
       url: String(url).trim(),
@@ -49,10 +50,11 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.put('/:id', (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { name, documentType, url, steps } = req.body;
-    const template = templateStore.updateTemplate(req.params.id, {
+    const template = await templateStore.updateTemplate(id, {
       ...(name !== undefined && { name: String(name).trim() }),
       ...(documentType !== undefined && { documentType: String(documentType).trim() }),
       ...(url !== undefined && { url: String(url).trim() }),
@@ -67,9 +69,10 @@ router.put('/:id', (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.delete('/:id', (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const deleted = templateStore.deleteTemplate(req.params.id);
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const deleted = await templateStore.deleteTemplate(id);
     if (!deleted) {
       throw createError('Template not found.', 'TEMPLATE_NOT_FOUND', 404);
     }

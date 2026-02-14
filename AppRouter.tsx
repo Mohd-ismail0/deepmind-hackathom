@@ -1,8 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import * as apiClient from './services/apiClient';
 import App from './App';
-import AdminGate from './components/admin/AdminGate';
+import AdminIndex from './components/admin/AdminIndex';
 import AdminLayout from './components/admin/AdminLayout';
 import TemplatesList from './components/admin/TemplatesList';
 import TemplateForm from './components/admin/TemplateForm';
@@ -12,7 +11,7 @@ const AppRouter: React.FC = () => (
     <Routes>
       <Route path="/" element={<App />} />
       <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={apiClient.getAdminToken() ? <Navigate to="templates" replace /> : <AdminGate />} />
+        <Route index element={<AdminIndex />} />
         <Route path="templates" element={<TemplatesList />} />
         <Route path="templates/new" element={<TemplateForm />} />
         <Route path="templates/:id" element={<TemplateForm />} />

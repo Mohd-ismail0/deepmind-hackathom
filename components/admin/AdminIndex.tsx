@@ -1,10 +1,10 @@
 import React from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
+import AdminGate from './AdminGate';
 
-const AdminLayout: React.FC = () => {
+const AdminIndex: React.FC = () => {
   const { user, ready } = useAdminAuth();
-  const location = useLocation();
 
   if (!ready) {
     return (
@@ -14,11 +14,11 @@ const AdminLayout: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/admin" state={{ from: location }} replace />;
+  if (user) {
+    return <Navigate to="/admin/templates" replace />;
   }
 
-  return <Outlet />;
+  return <AdminGate />;
 };
 
-export default AdminLayout;
+export default AdminIndex;

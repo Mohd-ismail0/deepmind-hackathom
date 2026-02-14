@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Loader2 } from 'lucide-react';
-import * as apiClient from '../../services/apiClient';
+import { signInAdmin } from '../../services/firebaseAuth';
 
 const AdminGate: React.FC = () => {
-  const [secret, setSecret] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -14,11 +15,10 @@ const AdminGate: React.FC = () => {
     setError('');
     setLoading(true);
     try {
-      const token = await apiClient.verifyAdminSecret(secret);
-      apiClient.setAdminToken(token);
+      await signInAdmin(email.trim(), password);
       navigate('/admin/templates', { replace: true });
     } catch (err) {
-      setError((err as Error).message || 'Invalid secret');
+      setError((err as Error).message || 'Sign in failed');
     } finally {
       setLoading(false);
     }
@@ -31,25 +31,34 @@ const AdminGate: React.FC = () => {
           <Lock size={24} />
         </div>
         <h1 className="text-xl font-bold text-slate-800 text-center mb-2">Admin access</h1>
-        <p className="text-sm text-slate-500 text-center mb-6">Enter the admin secret to continue.</p>
+        <p className="text-sm text-slate-500 text-center mb-6">Sign in with your admin account.</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
-            type="password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder="Admin secret"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
             className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             disabled={loading}
-            autoFocus
+            autoComplete="email"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            disabled={loading}
+            autoComplete="current-password"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
-            disabled={loading || !secret.trim()}
+            disabled={loading || !email.trim() || !password}
             className="w-full py-3 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 size={18} className="animate-spin" /> : null}
-            Continue
+            Sign in
           </button>
         </form>
       </div>

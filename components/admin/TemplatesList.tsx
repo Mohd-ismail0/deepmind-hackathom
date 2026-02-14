@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, ArrowLeft, Loader2 } from 'lucide-react';
 import * as apiClient from '../../services/apiClient';
+import { signOutAdmin } from '../../services/firebaseAuth';
 import type { Template } from '../../services/apiClient';
 
 const TemplatesList: React.FC = () => {
@@ -19,8 +20,9 @@ const TemplatesList: React.FC = () => {
       setTemplates(list);
     } catch (err) {
       setError((err as Error).message || 'Failed to load templates');
-      if ((err as Error & { statusCode?: number })?.message?.includes('401')) {
-        apiClient.clearAdminToken();
+      const code = (err as Error & { code?: string })?.code;
+      if (code === 'UNAUTHORIZED' || (err as Error)?.message?.includes('401')) {
+        await signOutAdmin();
         navigate('/admin', { replace: true });
       }
     } finally {
@@ -45,8 +47,8 @@ const TemplatesList: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    apiClient.clearAdminToken();
+  const handleLogout = async () => {
+    await signOutAdmin();
     navigate('/admin', { replace: true });
   };
 
