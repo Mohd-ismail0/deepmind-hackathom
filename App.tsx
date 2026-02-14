@@ -1,11 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ChatInterface from './components/ChatInterface';
 import BrowserSimulation from './components/BrowserSimulation';
-import { sendMessageToGemini, generateAutomationSteps, startChatSession, findGovernmentUrl, extractDocumentDetails } from './services/geminiService';
-import { Message, Sender, AutomationTask, AutomationStatus, UserDetails, AutomationStep, Attachment } from './types';
-import { PRERECORDED_PASSPORT_FLOW } from './constants';
+import * as apiClient from './services/apiClient';
+import { Message, Sender, AutomationTask, AutomationStatus, UserDetails, Attachment } from './types';
+
+function generateSessionId(): string {
+  return crypto.randomUUID?.() ?? `s-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function mapBackendStatus(status: apiClient.AutomationStatusBackend): AutomationStatus {
+  switch (status) {
+    case 'running':
+    case 'waiting_input':
+      return AutomationStatus.Running;
+    case 'completed':
+      return AutomationStatus.Completed;
+    case 'failed':
+      return AutomationStatus.Failed;
+    default:
+      return AutomationStatus.Idle;
+  }
+}
 
 const App: React.FC = () => {
+  const [sessionId] = useState(() => generateSessionId());
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -18,17 +36,99 @@ const App: React.FC = () => {
   const [automationStatus, setAutomationStatus] = useState<AutomationStatus>(AutomationStatus.Idle);
   const [currentTask, setCurrentTask] = useState<AutomationTask | undefined>(undefined);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [collectedData, setCollectedData] = useState<UserDetails>({});
-  
-  // Browser Visibility State
+  const [automationScreenshot, setAutomationScreenshot] = useState<string | null>(null);
+  const [waitingForAutomationInput, setWaitingForAutomationInput] = useState<string | null>(null);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Initialize Chat Session
+  const speakResponse = useCallback((text: string) => {
+    if (isMuted || !('speechSynthesis' in window)) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => v.lang.includes('en') && v.name.includes('Google'));
+    if (preferredVoice) utterance.voice = preferredVoice;
+    window.speechSynthesis.speak(utterance);
+  }, [isMuted]);
+
+  const pollAutomationStatus = useCallback(async () => {
+    try {
+      const data = await apiClient.getAutomationStatus(sessionId);
+      setAutomationStatus(mapBackendStatus(data.status));
+      setCurrentStepIndex(data.currentStepIndex);
+      setCurrentTask(data.task ?? undefined);
+      setAutomationScreenshot(data.screenshotBase64 ?? null);
+      if (data.needInput) {
+        setWaitingForAutomationInput(data.needInput);
+      }
+      if (data.status === 'completed') {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          text: `✅ **${data.task?.name ?? 'Task'}** successfully completed! The application has been submitted.`,
+          sender: Sender.System,
+          timestamp: Date.now()
+        }]);
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        setTimeout(() => setAutomationStatus(AutomationStatus.Idle), 5000);
+      }
+      if (data.status === 'failed' && data.errorMessage) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          text: `**System:** Automation failed. ${data.errorMessage}`,
+          sender: Sender.System,
+          timestamp: Date.now()
+        }]);
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }
+    } catch (err) {
+      console.error('Poll automation status error', err);
+    }
+  }, [sessionId]);
+
   useEffect(() => {
-    startChatSession();
-  }, []);
+    if (automationStatus !== AutomationStatus.Running || !currentTask) return;
+    pollRef.current = setInterval(pollAutomationStatus, 1500);
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [automationStatus, currentTask, pollAutomationStatus]);
 
   const handleSendMessage = async (text: string, attachments: Attachment[] = []) => {
+    if (waitingForAutomationInput) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        text,
+        sender: Sender.User,
+        timestamp: Date.now()
+      }]);
+      setIsProcessing(true);
+      try {
+        await apiClient.postAutomationInput(sessionId, text);
+        setWaitingForAutomationInput(null);
+        await pollAutomationStatus();
+      } catch (err) {
+        const e = err as Error & { code?: string; details?: unknown };
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          text: e?.message || 'Failed to send input. Please try again.',
+          sender: Sender.Agent,
+          timestamp: Date.now()
+        }]);
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     const newUserMsg: Message = {
       id: Date.now().toString(),
       text,
@@ -36,78 +136,63 @@ const App: React.FC = () => {
       timestamp: Date.now(),
       attachments
     };
-
     setMessages(prev => [...prev, newUserMsg]);
     setIsProcessing(true);
 
     try {
-      let extraDataMsg: Message | null = null;
-
-      // 1. Intercept Attachments for Extraction
       if (attachments.length > 0) {
         setMessages(prev => [...prev, {
-            id: Date.now().toString() + "_proc",
-            text: "Processing document for official details...",
-            sender: Sender.System,
-            timestamp: Date.now()
+          id: Date.now().toString() + '_proc',
+          text: 'Processing document for official details...',
+          sender: Sender.System,
+          timestamp: Date.now()
         }]);
-
-        // Just process the first one for now or loop
-        const extracted = await extractDocumentDetails(attachments[0]);
-        
-        // Add a "Review" Card Message
-        extraDataMsg = {
-            id: Date.now().toString() + "_review",
-            text: "",
-            sender: Sender.System,
-            timestamp: Date.now(),
-            isReview: true,
-            reviewData: extracted
-        };
       }
 
-      // 2. Send message to Gemini to understand intent and get response
-      const responseText = await sendMessageToGemini(text, attachments);
-      
-      // 3. Parse response for JSON blocks indicating automation start
-      const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
-      let cleanText = responseText;
-      let payload = null;
-
-      if (jsonMatch) {
-        try {
-          payload = JSON.parse(jsonMatch[1]);
-          cleanText = responseText.replace(jsonMatch[0], '').trim();
-        } catch (e) {
-          console.error("Failed to parse JSON from agent", e);
-        }
-      }
+      const data = await apiClient.postChat(sessionId, text, attachments);
 
       const newAgentMsg: Message = {
         id: (Date.now() + 1).toString(),
-        text: cleanText,
+        text: data.reply,
         sender: Sender.Agent,
         timestamp: Date.now()
       };
 
       setMessages(prev => {
-          const arr = [...prev, newAgentMsg];
-          if (extraDataMsg) arr.push(extraDataMsg);
-          return arr;
+        const arr = [...prev, newAgentMsg];
+        if (data.reviewData) {
+          arr.push({
+            id: Date.now().toString() + '_review',
+            text: '',
+            sender: Sender.System,
+            timestamp: Date.now(),
+            isReview: true,
+            reviewData: data.reviewData
+          });
+        }
+        return arr;
       });
-      
-      if (cleanText) speakResponse(cleanText);
 
-      // 4. Trigger Automation if payload exists (And we assume data is confirmed previously or now)
-      if (payload && payload.intent === 'start_automation') {
-          await handleStartAutomation(payload);
+      if (data.reply) speakResponse(data.reply);
+
+      if (data.automation) {
+        setCurrentTask(data.automation.task);
+        setAutomationStatus(AutomationStatus.Running);
+        setCurrentStepIndex(0);
+        setShowBrowser(true);
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          text: `**System:** Initiating automation for **${data.automation.task.name}**.`,
+          sender: Sender.System,
+          timestamp: Date.now()
+        }]);
       }
-
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      const e = err as Error & { code?: string; details?: unknown };
+      const detailsStr = e.details != null ? `\n\nDetails: ${JSON.stringify(e.details)}` : '';
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
-        text: "I encountered a connection error. Please try again.",
+        text: (e?.message || 'I encountered a connection error. Please try again.') + detailsStr,
         sender: Sender.Agent,
         timestamp: Date.now()
       }]);
@@ -117,157 +202,67 @@ const App: React.FC = () => {
   };
 
   const handleConfirmData = async (data: UserDetails) => {
-      setCollectedData(prev => ({ ...prev, ...data }));
-      
-      // Send a hidden message to context to inform Agent that data is verified
-      const confirmationText = `I have verified the following details from the document: ${JSON.stringify(data)}. You may proceed with the next steps or automation.`;
-      
-      setIsProcessing(true);
-      try {
-          const responseText = await sendMessageToGemini(confirmationText);
-          
-          // Check if the agent decides to start automation immediately after confirmation
-          const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
-          let cleanText = responseText;
-          let payload = null;
-          
-          if (jsonMatch) {
-             try {
-               payload = JSON.parse(jsonMatch[1]);
-               cleanText = responseText.replace(jsonMatch[0], '').trim();
-             } catch(e) {}
-          }
+    setIsProcessing(true);
+    try {
+      const res = await apiClient.postConfirmData(sessionId, data);
 
-          setMessages(prev => [...prev, {
-              id: Date.now().toString(),
-              text: cleanText,
-              sender: Sender.Agent,
-              timestamp: Date.now()
-          }]);
-          
-          if (payload && payload.intent === 'start_automation') {
-            await handleStartAutomation(payload);
-          }
-
-      } catch (e) {
-          console.error(e);
-      } finally {
-          setIsProcessing(false);
-      }
-  };
-
-  const handleStartAutomation = async (payload: any) => {
-    // Merge any data from payload with what we already collected/verified
-    const finalData = { ...collectedData, ...payload.data };
-    setCollectedData(finalData);
-
-    const taskName = payload.taskName || "Unknown Task";
-    let task: AutomationTask;
-
-    // Check if it's a pre-recorded flow (Admin configured)
-    const isPreRecorded = taskName.toLowerCase().includes('passport');
-
-    if (isPreRecorded) {
-      task = { 
-        ...PRERECORDED_PASSPORT_FLOW, 
-        // Inject data into values
-        steps: PRERECORDED_PASSPORT_FLOW.steps.map(s => ({
-            ...s,
-            value: s.value ? s.value.replace(/\{(\w+)\}/g, (_, key) => (finalData[key] as string) || '') : undefined
-        }))
-      };
-      
       setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        text: res.reply,
+        sender: Sender.Agent,
+        timestamp: Date.now()
+      }]);
+
+      if (res.reply) speakResponse(res.reply);
+
+      if (res.automation) {
+        setCurrentTask(res.automation.task);
+        setAutomationStatus(AutomationStatus.Running);
+        setCurrentStepIndex(0);
+        setShowBrowser(true);
+        setMessages(prev => [...prev, {
           id: Date.now().toString(),
-          text: `**System:** Initiating admin-verified automation for ${taskName}.`,
+          text: `**System:** Initiating automation for **${res.automation.task.name}**.`,
           sender: Sender.System,
           timestamp: Date.now()
-      }]);
-
-    } else {
-      // AI Navigated: 1. Search for URL, 2. Generate Playwright Steps
+        }]);
+      }
+    } catch (err) {
+      const e = err as Error & { code?: string; details?: unknown };
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
-        text: `**System:** No pre-recorded flow found. Searching government portals for **${taskName}**...`,
-        sender: Sender.System,
+        text: e?.message || 'Something went wrong. Please try again.',
+        sender: Sender.Agent,
         timestamp: Date.now()
       }]);
-      
-      const foundUrl = await findGovernmentUrl(taskName);
-      
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: `**System:** Found portal: [${foundUrl}](${foundUrl}). Generating live automation plan...`,
-        sender: Sender.System,
-        timestamp: Date.now()
-      }]);
-
-      const generatedSteps = await generateAutomationSteps(taskName, foundUrl);
-      
-      task = {
-        name: taskName,
-        type: 'ai-navigated',
-        url: foundUrl,
-        steps: generatedSteps
-      };
-    }
-
-    setCurrentTask(task);
-    setAutomationStatus(AutomationStatus.Running);
-    setCurrentStepIndex(0);
-    // Auto show browser when automation starts
-    setShowBrowser(true); 
-  };
-
-  const handleStepComplete = useCallback(() => {
-    if (!currentTask) return;
-
-    if (currentStepIndex < currentTask.steps.length - 1) {
-      setCurrentStepIndex(prev => prev + 1);
-    } else {
-      setAutomationStatus(AutomationStatus.Completed);
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: `✅ **${currentTask.name}** successfully completed! The application has been submitted.`,
-        sender: Sender.System,
-        timestamp: Date.now()
-      }]);
-      setTimeout(() => setAutomationStatus(AutomationStatus.Idle), 5000);
-    }
-  }, [currentTask, currentStepIndex]);
-
-  const speakResponse = (text: string) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => v.lang.includes('en') && v.name.includes('Google'));
-      if (preferredVoice) utterance.voice = preferredVoice;
-      window.speechSynthesis.speak(utterance);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   return (
     <div className="flex h-screen w-screen bg-slate-50 overflow-hidden">
-      {/* Left Panel: Chat */}
       <div className={`transition-all duration-500 ease-in-out ${showBrowser ? 'w-1/3 border-r border-slate-200' : 'w-full max-w-2xl mx-auto shadow-2xl my-8 rounded-2xl overflow-hidden h-[calc(100vh-4rem)] border border-slate-200'}`}>
-        <ChatInterface 
-          messages={messages} 
-          onSendMessage={handleSendMessage} 
+        <ChatInterface
+          messages={messages}
+          onSendMessage={handleSendMessage}
           onConfirmData={handleConfirmData}
           isProcessing={isProcessing}
           showBrowser={showBrowser}
           onToggleBrowser={() => setShowBrowser(!showBrowser)}
+          waitingForAutomationInput={waitingForAutomationInput}
+          isMuted={isMuted}
+          onMuteChange={setIsMuted}
         />
       </div>
-
-      {/* Right Panel: Browser Simulation (Only visible if showBrowser is true) */}
       <div className={`transition-all duration-500 ease-in-out bg-slate-800 ${showBrowser ? 'w-2/3 opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-full overflow-hidden'}`}>
-         <BrowserSimulation 
-            task={currentTask}
-            status={automationStatus}
-            currentStepIndex={currentStepIndex}
-            onStepComplete={handleStepComplete}
-         />
+        <BrowserSimulation
+          task={currentTask}
+          status={automationStatus}
+          currentStepIndex={currentStepIndex}
+          screenshotBase64={automationScreenshot}
+          waitingForInput={!!waitingForAutomationInput}
+        />
       </div>
     </div>
   );

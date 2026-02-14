@@ -43,11 +43,15 @@ export enum AutomationStatus {
 
 export interface AutomationStep {
   id: string;
-  action: 'visit' | 'fill' | 'click' | 'read' | 'verify' | 'upload';
+  action: 'visit' | 'fill' | 'click' | 'read' | 'verify' | 'upload' | 'prompt_user';
   target: string; // DOM selector or description
   value?: string;
   description: string;
   completed?: boolean;
+  /** For action === 'prompt_user': message shown to user (e.g. OTP prompt) */
+  promptText?: string;
+  /** For action === 'prompt_user': key to store user reply in collected data */
+  responseKey?: string;
 }
 
 export interface AutomationTask {

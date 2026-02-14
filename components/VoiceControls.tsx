@@ -5,12 +5,16 @@ interface VoiceControlsProps {
   onTranscript: (text: string) => void;
   isProcessing: boolean;
   variant?: 'icon' | 'large';
+  isMuted?: boolean;
+  onMuteChange?: (muted: boolean) => void;
 }
 
-const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessing, variant = 'icon' }) => {
+const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessing, variant = 'icon', isMuted: isMutedProp = false, onMuteChange }) => {
   const [isListening, setIsListening] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [internalMuted, setInternalMuted] = useState(false);
   const [recognition, setRecognition] = useState<any>(null);
+  const isMuted = onMuteChange ? isMutedProp : internalMuted;
+  const setMuted = onMuteChange ?? setInternalMuted;
 
   useEffect(() => {
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
@@ -76,7 +80,7 @@ const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessin
              {isListening ? "Listening..." : isProcessing ? "Processing..." : "Tap to Speak"}
           </p>
           <button
-            onClick={() => setIsMuted(!isMuted)}
+            onClick={() => setMuted(!isMuted)}
             className={`flex items-center space-x-2 px-4 py-2 rounded-full transition-colors text-sm font-medium ${
                 isMuted ? 'bg-slate-200 text-slate-500' : 'bg-blue-50 text-blue-600'
             }`}
@@ -91,7 +95,7 @@ const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessin
   return (
     <div className="flex items-center space-x-2">
       <button
-        onClick={() => setIsMuted(!isMuted)}
+        onClick={() => setMuted(!isMuted)}
         className={`p-2 rounded-full transition-colors ${
           isMuted ? 'bg-slate-200 text-slate-500' : 'bg-blue-100 text-blue-600'
         }`}

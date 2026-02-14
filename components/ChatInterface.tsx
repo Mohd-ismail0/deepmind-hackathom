@@ -12,9 +12,12 @@ interface ChatInterfaceProps {
   isProcessing: boolean;
   showBrowser: boolean;
   onToggleBrowser: () => void;
+  waitingForAutomationInput?: string | null;
+  isMuted?: boolean;
+  onMuteChange?: (muted: boolean) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onConfirmData, isProcessing, showBrowser, onToggleBrowser }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onConfirmData, isProcessing, showBrowser, onToggleBrowser, waitingForAutomationInput, isMuted = false, onMuteChange }) => {
   const [inputText, setInputText] = useState('');
   const [mode, setMode] = useState<'chat' | 'voice'>('chat');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -196,6 +199,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Waiting for OTP / user input banner */}
+      {waitingForAutomationInput && (
+        <div className="bg-amber-50 border-t border-amber-200 px-4 py-2 text-sm text-amber-800">
+          <span className="font-medium">Action required: </span>
+          {waitingForAutomationInput}
+          <span className="block text-xs text-amber-600 mt-1">Type your response below and send.</span>
+        </div>
+      )}
+
       {/* Input Area */}
       <div className="bg-white border-t border-slate-100">
         {mode === 'voice' ? (
@@ -203,7 +215,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
                  <VoiceControls 
                     onTranscript={handleVoiceTranscript} 
                     isProcessing={isProcessing} 
-                    variant="large" 
+                    variant="large"
+                    isMuted={isMuted}
+                    onMuteChange={onMuteChange}
                  />
              </div>
         ) : (
@@ -256,13 +270,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
                         type="text"
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
-                        placeholder="Type a message..."
+                        placeholder={waitingForAutomationInput ? "Enter OTP or response..." : "Type a message..."}
                         className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 py-3 text-slate-800 placeholder:text-slate-400 max-h-32"
                         disabled={isProcessing}
                     />
                     
                     <div className="flex items-center space-x-1 pr-1 mb-0.5">
-                        <VoiceControls onTranscript={handleVoiceTranscript} isProcessing={isProcessing} variant="icon" />
+                        <VoiceControls onTranscript={handleVoiceTranscript} isProcessing={isProcessing} variant="icon" isMuted={isMuted} onMuteChange={onMuteChange} />
                         
                         {(inputText.trim() || attachments.length > 0) && (
                             <button
