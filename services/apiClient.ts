@@ -91,3 +91,91 @@ export async function postAutomationInput(sessionId: string, input: string): Pro
   const body = await res.json();
   assertOk(res, body);
 }
+
+const ADMIN_TOKEN_KEY = 'govauto_admin_token';
+
+export function getAdminToken(): string | null {
+  return sessionStorage.getItem(ADMIN_TOKEN_KEY);
+}
+
+export function setAdminToken(token: string): void {
+  sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+}
+
+export function clearAdminToken(): void {
+  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+}
+
+export async function verifyAdminSecret(secret: string): Promise<string> {
+  const res = await fetch(`${getBaseUrl()}/api/v1/admin/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ secret }),
+  });
+  const body = await res.json();
+  assertOk(res, body);
+  return body.token;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  documentType: string;
+  url: string;
+  steps: { id: string; action: string; target: string; value?: string; description: string; promptText?: string; responseKey?: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+function adminHeaders(): HeadersInit {
+  const token = getAdminToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+export async function fetchTemplates(): Promise<Template[]> {
+  const res = await fetch(`${getBaseUrl()}/api/v1/templates`, { headers: adminHeaders() });
+  const body = await res.json();
+  assertOk(res, body);
+  return body.data;
+}
+
+export async function fetchTemplate(id: string): Promise<Template> {
+  const res = await fetch(`${getBaseUrl()}/api/v1/templates/${encodeURIComponent(id)}`, { headers: adminHeaders() });
+  const body = await res.json();
+  assertOk(res, body);
+  return body.data;
+}
+
+export async function createTemplate(data: { name: string; documentType: string; url: string; steps: Template['steps'] }): Promise<Template> {
+  const res = await fetch(`${getBaseUrl()}/api/v1/templates`, {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify(data),
+  });
+  const body = await res.json();
+  assertOk(res, body);
+  return body.data;
+}
+
+export async function updateTemplate(id: string, data: Partial<{ name: string; documentType: string; url: string; steps: Template['steps'] }>): Promise<Template> {
+  const res = await fetch(`${getBaseUrl()}/api/v1/templates/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: adminHeaders(),
+    body: JSON.stringify(data),
+  });
+  const body = await res.json();
+  assertOk(res, body);
+  return body.data;
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  const res = await fetch(`${getBaseUrl()}/api/v1/templates/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: adminHeaders(),
+  });
+  const body = await res.json();
+  assertOk(res, body);
+}

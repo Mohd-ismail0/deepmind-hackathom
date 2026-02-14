@@ -7,6 +7,7 @@ import adminRoutes from './routes/admin.js';
 import templateRoutes from './routes/templates.js';
 import chatRoutes from './routes/chat.js';
 import automationRoutes from './routes/automation.js';
+import whatsappWebhookRoutes from './routes/whatsappWebhook.js';
 
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -22,6 +23,7 @@ app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/templates', adminAuth, templateRoutes);
 app.use('/api/v1', chatRoutes);
 app.use('/api/v1/automation', automationRoutes);
+app.use('/webhook/whatsapp', whatsappWebhookRoutes);
 
 app.use((_req, _res, next) => {
   next(createError('Not found', 'NOT_FOUND', 404));
