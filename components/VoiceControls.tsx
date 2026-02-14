@@ -4,9 +4,10 @@ import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 interface VoiceControlsProps {
   onTranscript: (text: string) => void;
   isProcessing: boolean;
+  variant?: 'icon' | 'large';
 }
 
-const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessing }) => {
+const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessing, variant = 'icon' }) => {
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [recognition, setRecognition] = useState<any>(null);
@@ -17,7 +18,7 @@ const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessin
       const newRecognition = new SpeechRecognition();
       newRecognition.continuous = false;
       newRecognition.interimResults = false;
-      newRecognition.lang = 'en-US'; // Default, can be dynamic based on chat
+      newRecognition.lang = 'en-US';
 
       newRecognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
@@ -47,6 +48,43 @@ const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessin
       setIsListening(true);
     }
   }, [isListening, recognition]);
+
+  if (variant === 'large') {
+    return (
+       <div className="flex flex-col items-center justify-center space-y-6 py-8 w-full">
+          <div className="relative">
+             {isListening && (
+                <div className="absolute inset-0 bg-red-400 rounded-full animate-ping opacity-75"></div>
+             )}
+             <button
+                onClick={toggleListening}
+                disabled={isProcessing || !recognition}
+                className={`relative z-10 p-8 rounded-full transition-all shadow-xl ${
+                    isListening
+                        ? 'bg-red-500 text-white'
+                        : isProcessing
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+             >
+                {isListening ? <MicOff size={48} /> : <Mic size={48} />}
+             </button>
+          </div>
+          <p className="text-slate-500 font-medium">
+             {isListening ? "Listening..." : isProcessing ? "Processing..." : "Tap to Speak"}
+          </p>
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-full transition-colors text-sm font-medium ${
+                isMuted ? 'bg-slate-200 text-slate-500' : 'bg-blue-50 text-blue-600'
+            }`}
+          >
+            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            <span>{isMuted ? "Voice Output Off" : "Voice Output On"}</span>
+          </button>
+       </div>
+    );
+  }
 
   return (
     <div className="flex items-center space-x-2">

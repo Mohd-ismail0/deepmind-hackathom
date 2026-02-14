@@ -4,12 +4,21 @@ export enum Sender {
   System = 'system'
 }
 
+export interface Attachment {
+  name: string;
+  type: string;
+  data: string; // Base64 string including metadata (e.g., "data:image/png;base64,...")
+}
+
 export interface Message {
   id: string;
   text: string;
   sender: Sender;
   timestamp: number;
   isVoice?: boolean;
+  attachments?: Attachment[];
+  isReview?: boolean; // New flag for review cards
+  reviewData?: UserDetails; // The data to review
 }
 
 export interface UserDetails {
@@ -19,6 +28,8 @@ export interface UserDetails {
   idNumber?: string;
   email?: string;
   phone?: string;
+  expiryDate?: string;
+  documentType?: string;
   [key: string]: string | undefined;
 }
 
