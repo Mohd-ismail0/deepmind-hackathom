@@ -208,26 +208,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
              </div>
         ) : (
             <div className="p-4">
-                 {/* Attachment Preview */}
+                 {/* Attachment Preview with Label */}
                  {attachments.length > 0 && (
-                    <div className="flex space-x-3 mb-3 overflow-x-auto pb-2">
-                        {attachments.map((att, i) => (
-                            <div key={i} className="relative group flex-shrink-0">
-                                <div className="w-16 h-16 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 flex items-center justify-center">
-                                    {att.type.startsWith('image/') ? (
-                                        <img src={att.data} alt="preview" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <File size={24} className="text-slate-400" />
-                                    )}
+                    <div className="mb-3 animate-fade-in-up">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 mb-2 px-1">Attachments</div>
+                        <div className="flex space-x-3 overflow-x-auto pb-2 scrollbar-hide">
+                            {attachments.map((att, i) => (
+                                <div key={i} className="relative group flex-shrink-0">
+                                    <div className="w-16 h-16 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 flex items-center justify-center shadow-sm">
+                                        {att.type.startsWith('image/') ? (
+                                            <img src={att.data} alt="preview" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <File size={24} className="text-slate-400" />
+                                        )}
+                                    </div>
+                                    <button 
+                                        onClick={() => removeAttachment(i)}
+                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:bg-red-600 hover:scale-110 transition-all"
+                                    >
+                                        <X size={12} />
+                                    </button>
                                 </div>
-                                <button 
-                                    onClick={() => removeAttachment(i)}
-                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:bg-red-600"
-                                >
-                                    <X size={12} />
-                                </button>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
                  )}
 

@@ -18,7 +18,9 @@ const VoiceControls: React.FC<VoiceControlsProps> = ({ onTranscript, isProcessin
       const newRecognition = new SpeechRecognition();
       newRecognition.continuous = false;
       newRecognition.interimResults = false;
-      newRecognition.lang = 'en-US';
+      // Remove hardcoded language to allow browser default or auto-detection if supported
+      // newRecognition.lang = 'en-US'; 
+      newRecognition.lang = navigator.language || 'en-US';
 
       newRecognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
