@@ -1,4 +1,3 @@
-import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -6,29 +5,12 @@ import type { AutomationStep } from '../types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const DATABASE_PATH = process.env.DATABASE_PATH || path.join(__dirname, '..', '..', 'data', 'templates.db');
-
-let db: Database.Database | null = null;
-
-function getDb(): Database.Database {
-  if (!db) {
-    const dir = path.dirname(DATABASE_PATH);
-    fs.mkdirSync(dir, { recursive: true });
-    db = new Database(DATABASE_PATH);
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS templates (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        documentType TEXT NOT NULL,
-        url TEXT NOT NULL,
-        steps TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      )
-    `);
-  }
-  return db;
-}
+const DATA_DIR = process.env.DATABASE_PATH
+  ? path.dirname(process.env.DATABASE_PATH)
+  : path.join(__dirname, '..', '..', 'data');
+const FILE_PATH = process.env.DATABASE_PATH
+  ? process.env.DATABASE_PATH.replace(/\.db$/, '.json')
+  : path.join(DATA_DIR, 'templates.json');
 
 export interface TemplateRow {
   id: string;
@@ -40,7 +22,37 @@ export interface TemplateRow {
   updatedAt: string;
 }
 
-function rowToTemplate(row: { id: string; name: string; documentType: string; url: string; steps: string; createdAt: string; updatedAt: string }): TemplateRow {
+interface StoredTemplate {
+  id: string;
+  name: string;
+  documentType: string;
+  url: string;
+  steps: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function loadAll(): StoredTemplate[] {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch {
+    // ignore
+  }
+  try {
+    const raw = fs.readFileSync(FILE_PATH, 'utf-8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : data.templates ? data.templates : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAll(rows: StoredTemplate[]): void {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(FILE_PATH, JSON.stringify(rows, null, 2), 'utf-8');
+}
+
+function rowToTemplate(row: StoredTemplate): TemplateRow {
   return {
     id: row.id,
     name: row.name,
@@ -53,30 +65,13 @@ function rowToTemplate(row: { id: string; name: string; documentType: string; ur
 }
 
 export function listTemplates(): TemplateRow[] {
-  const rows = getDb().prepare('SELECT * FROM templates ORDER BY name').all() as {
-    id: string;
-    name: string;
-    documentType: string;
-    url: string;
-    steps: string;
-    createdAt: string;
-    updatedAt: string;
-  }[];
-  return rows.map(rowToTemplate);
+  const rows = loadAll();
+  return rows.sort((a, b) => a.name.localeCompare(b.name)).map(rowToTemplate);
 }
 
 export function getTemplateById(id: string): TemplateRow | null {
-  const row = getDb().prepare('SELECT * FROM templates WHERE id = ?').get(id) as
-    | {
-        id: string;
-        name: string;
-        documentType: string;
-        url: string;
-        steps: string;
-        createdAt: string;
-        updatedAt: string;
-      }
-    | undefined;
+  const rows = loadAll();
+  const row = rows.find((r) => r.id === id);
   return row ? rowToTemplate(row) : null;
 }
 
@@ -102,20 +97,18 @@ export function createTemplate(data: {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const stepsJson = JSON.stringify(data.steps);
-  getDb()
-    .prepare(
-      'INSERT INTO templates (id, name, documentType, url, steps, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    )
-    .run(id, data.name, data.documentType, data.url, stepsJson, now, now);
-  const row = getDb().prepare('SELECT * FROM templates WHERE id = ?').get(id) as {
-    id: string;
-    name: string;
-    documentType: string;
-    url: string;
-    steps: string;
-    createdAt: string;
-    updatedAt: string;
+  const row: StoredTemplate = {
+    id,
+    name: data.name,
+    documentType: data.documentType,
+    url: data.url,
+    steps: stepsJson,
+    createdAt: now,
+    updatedAt: now,
   };
+  const rows = loadAll();
+  rows.push(row);
+  saveAll(rows);
   return rowToTemplate(row);
 }
 
@@ -125,18 +118,27 @@ export function updateTemplate(
 ): TemplateRow | null {
   const existing = getTemplateById(id);
   if (!existing) return null;
-  const name = data.name ?? existing.name;
-  const documentType = data.documentType ?? existing.documentType;
-  const url = data.url ?? existing.url;
-  const steps = data.steps ?? existing.steps;
+  const rows = loadAll();
+  const idx = rows.findIndex((r) => r.id === id);
+  if (idx === -1) return null;
   const updatedAt = new Date().toISOString();
-  getDb()
-    .prepare('UPDATE templates SET name = ?, documentType = ?, url = ?, steps = ?, updatedAt = ? WHERE id = ?')
-    .run(name, documentType, url, JSON.stringify(steps), updatedAt, id);
-  return getTemplateById(id);
+  rows[idx] = {
+    id,
+    name: data.name ?? existing.name,
+    documentType: data.documentType ?? existing.documentType,
+    url: data.url ?? existing.url,
+    steps: JSON.stringify(data.steps ?? existing.steps),
+    createdAt: rows[idx].createdAt,
+    updatedAt,
+  };
+  saveAll(rows);
+  return rowToTemplate(rows[idx]);
 }
 
 export function deleteTemplate(id: string): boolean {
-  const result = getDb().prepare('DELETE FROM templates WHERE id = ?').run(id);
-  return result.changes > 0;
+  const rows = loadAll();
+  const next = rows.filter((r) => r.id !== id);
+  if (next.length === rows.length) return false;
+  saveAll(next);
+  return true;
 }
