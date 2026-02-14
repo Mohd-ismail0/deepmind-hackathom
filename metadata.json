@@ -1,0 +1,7 @@
+{
+  "name": "GovAuto Agent",
+  "description": "An AI-powered browser automation agent for government services with voice and chat interfaces.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
